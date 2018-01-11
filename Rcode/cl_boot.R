@@ -4,75 +4,91 @@ library(broom)
 
 df = read_csv("data/intermediate/ve_uu_grp.csv")
 
+df_boot = df %>% 
+    select(seg_name, cm_id, id, v, e, grp, base_ai)
 
 B = 2000
+
 cm_ids = df$cm_id %>% unique()
-C = length(cm_ids)
 segments = df$seg_name %>% unique()
-S = length(segments)
 GRPs = c(500, 750, 1000, 1250, 1500, 1750, 2000)
-G = length(GRPs)
 
-df_ai = cross_df(list(segment_name = segments, cm = cm_ids, grp = GRPs)) %>% 
-    arrange(segment_name, cm, grp) %>% 
-    mutate(
-        mean = 0,
-        min = 0,
-        q0025 = 0,
-        q005 = 0,
-        med = 0,
-        q095 = 0,
-        q0975 = 0,
-        sd = 0
-    )
-
-c=1
-g=1
-b=1
-s=1
+df_info = cross_df(list(seg_name = segments, cm_id = cm_ids, grp = GRPs)) %>% 
+    arrange(seg_name, cm_id, grp)
 
 
+df_max = df_boot %>% 
+    group_by(seg_name, cm_id) %>% 
+    summarise(max_grp = max(grp))
 
-for (s in 1) {
-    tmp_s = df %>% 
-        filter(seg_name == segments[s])
+df_info = df_info %>% 
+    left_join(df_max, by = c("seg_name", "cm_id")) %>% 
+    filter(grp <= max_grp)
+
+
+D = nrow(df_info)
+
+df_ai = tibble(
+    se = 0,
+    mean = 0,
+    min = 0,
+    q025 = 0,
+    q050 = 0,
+    med = 0,
+    q0950 = 0,
+    q0975 = 0,
+    max = 0
+)
+
+
+for (d in D) {
+            
+    tmp = df_boot %>% 
+        filter(
+            seg_name == df_info$seg_name[d],
+            cm_id == df_info$cm_id[d],
+            grp <= df_info$grp[d]
+        )
+
+        
+    ids = tmp$id
+    boot_ids = sample(ids, length(ids) * B, replace = T)
     
-    for (c in 1){
-        
-        tmp_c = tmp_s %>% 
-            filter(cm_id == cm_ids[c])
-        
-        for (g in 1) {
-            
-            tmp_g = tmp_c %>%
-                filter(grp <= GRPs[g])
-            
-            AIs = numeric(B)
-            for (b in 1) {
-                
-                ids = sample(tmp_g$id, length(tmp_g$id), replace = T)
-                
-                idx =  map(ids, function(x) which(tmp_g$id == x)) %>% 
-                    map(., function(x) if (length(x) == 1) {x} else {sample(x, length(x), replace = T)})
-                
-                tmp = tmp_g %>%
-                    slice(unlist(idx)) %>%
-                    group_by(base_ai) %>% 
-                    summarise(
-                        v = sum(v),
-                        e = sum(e)
-                    ) %>% 
-                    mutate(ai = e / v / base_ai)
-                
-                AIs[b] = tmp$ai
-            }
-            
-            df_ai$mean
-            = Ais %>% mean()
-            df_ai$mean = Ais %>% mean()
-            df_ai$mean = Ais %>% mean()
-            df_ai$mean = Ais %>% mean()
-            df_ai$mean = Ais %>% mean()
-        }
+    idx =  map(boot_ids, function(x) which(ids == x))
+    boot_idx = idx %>% 
+        map(., function(x) if (length(x) == 1) {x} else {sample(x, length(x), replace = T)}) %>% 
+        unlist()
+    
+    boot_group = numeric(length(boot_idx))
+    cum_len = 0
+    for (b in 1:B) {
+        bs = rep(b, idx[((b-1)*length(ids)+1):(b*length(ids))] %>% unlist() %>% length())
+        tmp_len = length(bs)
+        boot_group[(cum_len + 1):(cum_len + tmp_len)] = bs
+        cmu_len = cum_len + tmp_len
     }
+    
+    ai_boot = tmp %>%
+        slice(boot_idx) %>%
+        mutate(boot_group = boot_group) %>% 
+        group_by(boot_group, base_ai) %>% 
+        summarise(
+            v = sum(v),
+            e = sum(e)
+        ) %>% 
+        mutate(ai = e / v / base_ai) %>% 
+        ungroup() %>% 
+        summarise(
+            se  = sd(ai),
+            mean = mean(ai),
+            min = min(ai),
+            q025 = quantile(ai, 0.025),
+            q050 = quantile(ai, 0.05),
+            med  = quantile(ai, 0.5),
+            q950 = quantile(ai, 0.95),
+            q975 = quantile(ai, 0.975),
+            max = max(ai)
+        )
+    
+    df_ai = bind_rows(df_ai, ai_boot)
 }

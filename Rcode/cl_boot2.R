@@ -27,6 +27,8 @@ df_info = df_info %>%
 
 
 D = nrow(df_info)
+D = 63
+
 df_ai = tibble(
     se = 0,
     mean = 0,
@@ -40,25 +42,25 @@ df_ai = tibble(
 )
 
 
-for (d in 64:D) {
-            
+for (d in 1:D) {
+    
     tmp = df_boot %>% 
         filter(
             seg_name == df_info$seg_name[d],
             cm_id == df_info$cm_id[d],
             grp <= df_info$grp[d]
         )
-
-        
+    
+    
     ids = tmp$id
     boot_ids = sample(ids, length(ids) * B, replace = T)
     
-    idx =  map(boot_ids, function(x) which(ids == x))
-    boot_idx = idx %>% 
-        map(., function(x) if (length(x) == 1) {x} else {sample(x, length(x), replace = T)}) %>% 
-        unlist()
+    idx =  map(boot_ids, function(x) which(ids == x)) %>% unlist()
+    # boot_idx = idx %>% 
+    #     map(., function(x) if (length(x) == 1) {x} else {sample(x, length(x), replace = T)}) %>% 
+    #     unlist()
     
-    boot_group = numeric(length(boot_idx))
+    boot_group = numeric(length(idx))
     cum_len = 0
     for (b in 1:B) {
         bs = rep(b, idx[((b-1)*length(ids)+1):(b*length(ids))] %>% unlist() %>% length())
@@ -68,7 +70,7 @@ for (d in 64:D) {
     }
     
     ai_boot = tmp %>%
-        slice(boot_idx) %>%
+        slice(idx) %>%
         mutate(boot_group = boot_group) %>% 
         group_by(boot_group, base_ai) %>% 
         summarise(
@@ -90,18 +92,20 @@ for (d in 64:D) {
         )
     
     df_ai = bind_rows(df_ai, ai_boot)
-    print(d)
     print(ai_boot)
+    print(d)
 }
 
-#df_ai = df_ai %>% slice(-1)
+df_ai = df_ai %>% slice(-1)
 df_ai
 
+df_results = bind_cols(df_info[1:D, ], df_ai)
 
-df_results = bind_cols(df_info, df_ai)
+
+
 
 df_results %>% 
-    write_excel_csv("data/intermediate/boot_result.csv")
+    write_excel_csv("data/intermediate/boot_result2.csv")
 
 
 df_uu = df %>% 
@@ -125,9 +129,7 @@ for (g in c(750, 1000, 1250, 1500, 1750, 2000)) {
 
 
 df_results2 = df_results %>% 
+    select(-c(q0950, q0975)) %>% 
     left_join(df_uu, by = c("seg_name", "cm_id", "grp")) %>% 
-    select(seg_name:max_grp, uu, everything())
-
-df_results2 %>% 
-    write_excel_csv("data/intermediate/boot_results_with_uu.csv")
+    write_excel_csv("data/intermediate/boot_results_with_uu2.csv")
 
